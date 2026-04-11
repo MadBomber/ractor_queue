@@ -116,3 +116,104 @@ if __FILE__ == $PROGRAM_NAME && ARGV.first == "--test-chunk"
   puts "chunk_text: ok (#{chunks.size} chunks from #{sample.length} chars)"
   exit 0
 end
+
+# ── Database helpers ───────────────────────────────────────────────────────────
+
+# Open (or create) the sqlite-vec database and ensure schema exists.
+# Called by Main before spawning any Ractors.
+def setup_db(path)
+  db = SQLite3::Database.new(path)
+  db.enable_load_extension(true)
+  SqliteVec.load(db)
+  db.enable_load_extension(false)
+  db.execute("PRAGMA journal_mode=WAL")
+  db.execute(<<~SQL)
+    CREATE VIRTUAL TABLE IF NOT EXISTS vec_docs USING vec0(
+      embedding float[#{EMBEDDING_DIM}] distance_metric=cosine
+    )
+  SQL
+  db.execute(<<~SQL)
+    CREATE TABLE IF NOT EXISTS doc_meta (
+      rowid       INTEGER PRIMARY KEY AUTOINCREMENT,
+      chunk_text  TEXT NOT NULL,
+      source_path TEXT NOT NULL
+    )
+  SQL
+  db.close
+end
+
+# Open an existing database for writing (called inside Writer Ractor).
+def open_write_db(path)
+  db = SQLite3::Database.new(path)
+  db.enable_load_extension(true)
+  SqliteVec.load(db)
+  db.enable_load_extension(false)
+  db.execute("PRAGMA journal_mode=WAL")
+  db
+end
+
+# Open an existing database for reading (called inside QueryEmbedder Ractor).
+def open_read_db(path)
+  db = SQLite3::Database.new(path)
+  db.enable_load_extension(true)
+  SqliteVec.load(db)
+  db.enable_load_extension(false)
+  db
+end
+
+# Commit a batch of EmbeddedChunk structs to both tables.
+# Returns the number of rows committed.
+def insert_batch(db, batch)
+  return 0 if batch.empty?
+  db.transaction do
+    batch.each do |chunk|
+      db.execute(
+        "INSERT INTO doc_meta(chunk_text, source_path) VALUES (?, ?)",
+        [chunk.text, chunk.source_path]
+      )
+      rowid = db.last_insert_row_id
+      db.execute(
+        "INSERT INTO vec_docs(rowid, embedding) VALUES (?, ?)",
+        [rowid, chunk.vector_blob]
+      )
+    end
+  end
+  batch.size
+end
+
+# Run a KNN search. Returns an Array of frozen Hit structs.
+def knn_search(db, vector_blob, limit: 10)
+  rows = db.execute(<<~SQL, [vector_blob, limit])
+    SELECT m.chunk_text, m.source_path, v.distance
+    FROM vec_docs v
+    JOIN doc_meta m ON m.rowid = v.rowid
+    WHERE v.embedding MATCH ? AND k=?
+    ORDER BY v.distance
+  SQL
+  rows.map do |chunk_text, _source_path, distance|
+    score = (1.0 - distance / 2.0).clamp(0.0, 1.0)
+    Hit.new(chunk_text.freeze, score).freeze
+  end
+end
+
+if __FILE__ == $PROGRAM_NAME && ARGV.first == "--test-db"
+  require "tempfile"
+  tmp = Tempfile.new(["rag_test", ".db"])
+  tmp.close
+  setup_db(tmp.path)
+  db = open_write_db(tmp.path)
+  fake_vec  = ([0.1] * EMBEDDING_DIM).pack("f*")
+  fake_blob = fake_vec.freeze
+  fake      = EmbeddedChunk.new("d1", 0, "hello world", fake_blob, "test.txt")
+  inserted  = insert_batch(db, [fake])
+  raise "expected 1 inserted" unless inserted == 1
+  db.close
+  rdb  = open_read_db(tmp.path)
+  hits = knn_search(rdb, fake_blob, limit: 5)
+  raise "expected 1 hit" unless hits.size == 1
+  raise "score out of range" unless hits.first.score.between?(0.0, 1.0)
+  rdb.close
+  tmp.unlink
+  puts "DB helpers: ok"
+  exit 0
+end
