@@ -217,3 +217,148 @@ if __FILE__ == $PROGRAM_NAME && ARGV.first == "--test-db"
   puts "DB helpers: ok"
   exit 0
 end
+
+# ── Ractor factories ───────────────────────────────────────────────────────────
+
+# ── Task 5: Reader ─────────────────────────────────────────────────────────────
+# Globs dir for .txt/.md/.rb files, pushes ProgressEvent(:total,...) first,
+# then RawDocuments, then :shutdown × n_chunkers.
+def start_reader(dir, doc_queue, progress_queue, n_chunkers)
+  Ractor.new(dir.freeze, doc_queue, progress_queue, n_chunkers) do |dir, doc_queue, progress_queue, n_chunkers|
+    files = Dir.glob(File.join(dir, "**", "*.{txt,md,rb}")).sort
+    total = files.size
+    progress_queue.try_push(
+      Ractor.make_shareable(ProgressEvent.new(:total, total, "found #{total} files in #{dir}"))
+    )
+    files.each_with_index do |path, i|
+      text = File.read(path, encoding: "utf-8", invalid: :replace, undef: :replace)
+      doc  = Ractor.make_shareable(RawDocument.new(i, path.freeze, text.freeze))
+      doc_queue.push(doc)
+    end
+    n_chunkers.times { doc_queue.push(:shutdown) }
+  end
+end
+
+# ── Task 6: Chunkers ────────────────────────────────────────────────────────────
+# N Ractors: pop RawDocuments, split into RawChunks, propagate :shutdown.
+def start_chunkers(n, doc_queue, chunk_queue, progress_queue)
+  Array.new(n) do
+    Ractor.new(doc_queue, chunk_queue, progress_queue) do |doc_queue, chunk_queue, progress_queue|
+      chunk_count = 0
+      loop do
+        item = doc_queue.pop
+        break if item == :shutdown
+
+        chunks = chunk_text(item.text)
+        chunks.each_with_index do |text, idx|
+          rc = Ractor.make_shareable(RawChunk.new(item.id, idx, text.freeze, item.path))
+          chunk_queue.push(rc)
+        end
+        chunk_count += chunks.size
+        progress_queue.try_push(
+          Ractor.make_shareable(
+            ProgressEvent.new(:chunk, chunk_count, "chunked #{File.basename(item.path)} (#{chunks.size})")
+          )
+        )
+      end
+      chunk_queue.push(:shutdown)
+    end
+  end
+end
+
+# ── Task 7: Embedders ───────────────────────────────────────────────────────────
+# N Ractors: each loads its own Informers model, embeds chunks, propagates :shutdown.
+def start_embedders(n, chunk_queue, embed_queue, progress_queue)
+  Array.new(n) do
+    Ractor.new(chunk_queue, embed_queue, progress_queue) do |chunk_queue, embed_queue, progress_queue|
+      model = Informers.pipeline("embedding", MODEL_NAME)
+      embed_count = 0
+      loop do
+        item = chunk_queue.pop
+        break if item == :shutdown
+
+        t0     = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        vector = model.(item.text)
+        ms     = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round
+        blob   = vector.pack("f*").freeze
+
+        ec = Ractor.make_shareable(
+          EmbeddedChunk.new(item.doc_id, item.chunk_index, item.text, blob, item.source_path)
+        )
+        embed_queue.push(ec)
+        embed_count += 1
+        progress_queue.try_push(
+          Ractor.make_shareable(
+            ProgressEvent.new(:embed, embed_count, "chunk #{embed_count} → #{EMBEDDING_DIM}-dim (#{ms}ms)")
+          )
+        )
+      end
+      embed_queue.push(:shutdown)
+    end
+  end
+end
+
+# ── Task 8: Writer ──────────────────────────────────────────────────────────────
+# Single Ractor with exclusive write access. Batches inserts; pushes :done on finish.
+def start_writer(db_path, embed_queue, progress_queue)
+  Ractor.new(db_path, embed_queue, progress_queue) do |db_path, embed_queue, progress_queue|
+    db        = open_write_db(db_path)
+    batch     = []
+    total     = 0
+    batch_num = 0
+
+    flush = lambda do
+      return if batch.empty?
+      committed  = insert_batch(db, batch)
+      total     += committed
+      batch_num += 1
+      progress_queue.try_push(
+        Ractor.make_shareable(
+          ProgressEvent.new(:store, total, "batch ##{batch_num} committed (#{committed} rows)")
+        )
+      )
+      batch.clear
+    end
+
+    loop do
+      item = embed_queue.pop
+      if item == :shutdown
+        flush.()
+        break
+      end
+      batch << item
+      flush.() if batch.size >= BATCH_SIZE
+    end
+
+    db.close
+    progress_queue.push(
+      Ractor.make_shareable(ProgressEvent.new(:done, total, "index complete — #{total} chunks stored"))
+    )
+  end
+end
+
+# ── Task 9: QueryEmbedder ───────────────────────────────────────────────────────
+# Single Ractor: loads Informers model + sqlite-vec read handle.
+# Embeds query, runs KNN, pushes populated QueryResult.
+def start_query_embedder(db_path, query_jobs, query_results)
+  Ractor.new(db_path, query_jobs, query_results) do |db_path, query_jobs, query_results|
+    model = Informers.pipeline("embedding", MODEL_NAME)
+    db    = open_read_db(db_path)
+
+    query_id = 0
+    loop do
+      job = query_jobs.pop
+      break if job == :shutdown
+
+      vector = model.(job.text)
+      blob   = vector.pack("f*").freeze
+      hits   = knn_search(db, blob, limit: 10)
+      result = Ractor.make_shareable(
+        QueryResult.new(query_id += 1, job.text.freeze, hits.freeze)
+      )
+      query_results.push(result)
+    end
+
+    db.close
+  end
+end
