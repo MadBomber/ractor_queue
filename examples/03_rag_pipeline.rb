@@ -28,6 +28,7 @@ require "informers"
 require "ratatui_ruby"
 require "etc"
 require "tmpdir"
+require "fileutils"
 require "optparse"
 
 # ── Aliases ────────────────────────────────────────────────────────────────────
@@ -234,6 +235,9 @@ def start_reader(dir, doc_queue, progress_queue, n_chunkers)
       text = File.read(path, encoding: "utf-8", invalid: :replace, undef: :replace)
       doc  = Ractor.make_shareable(RawDocument.new(i, path.freeze, text.freeze))
       doc_queue.push(doc)
+      progress_queue.try_push(
+        Ractor.make_shareable(ProgressEvent.new(:doc, i + 1, File.basename(path)))
+      )
     end
     n_chunkers.times { doc_queue.push(:shutdown) }
   end
@@ -370,4 +374,262 @@ def start_query_embedder(db_path, query_jobs, query_results)
 
     db.close
   end
+end
+
+# ── TUI state helpers ──────────────────────────────────────────────────────────
+
+def initial_state
+  size = RatatuiRuby.get_terminal_size
+  AppState.new(
+    total_docs:      0,
+    docs_read:       0,
+    chunks_produced: 0,
+    embeddings_done: 0,
+    stored_count:    0,
+    ingest_done:     false,
+    activity_log:    [],
+    embed_times:     [],
+    input_buffer:    +"",
+    current_result:  nil,
+    layout:          compute_layout(size)
+  )
+end
+
+# Returns :horizontal (side-by-side) or :vertical (stacked).
+# Horizontal for wide/short terminals; vertical for taller ones.
+def compute_layout(size)
+  return :horizontal if size.width.to_f / size.height > 2.5
+  return :horizontal if size.height < 25
+  :vertical
+end
+
+# ── TUI render ─────────────────────────────────────────────────────────────────
+
+# Drain progress events and query results into state. Called once per frame.
+def drain_queues(state, progress_queue, query_results)
+  SPIN_DRAIN.times do
+    ev = progress_queue.try_pop
+    break if ev.equal?(RactorQueue::EMPTY)
+
+    case ev.stage
+    when :total
+      state.total_docs = ev.count
+    when :doc
+      state.docs_read = ev.count
+    when :chunk
+      state.chunks_produced = ev.count
+    when :embed
+      state.embeddings_done = ev.count
+      state.embed_times << Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      state.embed_times.shift if state.embed_times.size > 10
+    when :store
+      state.stored_count = ev.count
+    when :done
+      state.stored_count = ev.count
+      state.ingest_done  = true
+    end
+
+    state.activity_log << ev.detail
+    state.activity_log.shift if state.activity_log.size > 3
+  end
+
+  result = query_results.try_pop
+  state.current_result = result unless result.equal?(RactorQueue::EMPTY)
+end
+
+# Approximate embedding rate (chunks/s) over the rolling embed_times window.
+def embed_rate(state)
+  times = state.embed_times
+  return 0.0 if times.size < 2
+  elapsed = times.last - times.first
+  return 0.0 if elapsed <= 0
+  (times.size / elapsed).round(1)
+end
+
+def render_ingest_panel(frame, area, state)
+  total  = [state.total_docs, 1].max
+  ratio  = (state.stored_count.to_f / total).clamp(0.0, 1.0)
+  pct    = (ratio * 100).round
+  rate   = embed_rate(state)
+  status = state.ingest_done ? "Done" : "Running"
+  label  = "#{pct}%  #{rate} emb/s  [#{status}]"
+
+  lines = [
+    "Documents : #{state.docs_read} / #{state.total_docs}",
+    "Chunks    : #{state.chunks_produced}",
+    "Embeddings: #{state.embeddings_done}",
+    "Stored    : #{state.stored_count}",
+    "",
+    label
+  ].join("\n")
+
+  # Split area: text top, gauge bottom row
+  text_area, gauge_area = L.split(
+    area,
+    direction: :vertical,
+    constraints: [C.fill(1), C.length(1)]
+  )
+
+  border = W::Block.new(
+    title: " Ingestion (#{N_EMBEDDERS} embedders, #{N_CHUNKERS} chunkers) ",
+    borders: [:all]
+  )
+  frame.render_widget(W::Paragraph.new(text: lines, block: border), text_area)
+  frame.render_widget(W::LineGauge.new(ratio: ratio), gauge_area)
+end
+
+def render_query_panel(frame, area, state)
+  result   = state.current_result
+  prompt   = "▶ #{state.input_buffer}_"
+  hint     = "[Enter: submit  q: quit]"
+
+  hit_lines = if result
+    result.hits.first(8).map do |h|
+      "#{(h.score * 100).round}%  #{h.text.gsub(/\s+/, " ").slice(0, 80)}"
+    end.join("\n")
+  else
+    "(no results yet)"
+  end
+
+  content = "#{hint}\n#{prompt}\n\n#{hit_lines}"
+
+  title  = result ? " Query: \"#{result.query_text.slice(0, 30)}\" " : " Semantic Search "
+  border = W::Block.new(title: title, borders: [:all])
+  frame.render_widget(W::Paragraph.new(text: content, block: border, wrap: true), area)
+end
+
+def render_activity_log(frame, area, state)
+  text = state.activity_log.last(3).join("  │  ")
+  frame.render_widget(W::Paragraph.new(text: text), area)
+end
+
+# Render one complete TUI frame. Called inside tui.draw block.
+def render_frame(frame, state)
+  total_area = frame.area
+
+  if state.layout == :horizontal
+    # Wide terminal: side-by-side panels, log strip at bottom
+    main_area, log_area = L.split(
+      total_area,
+      direction: :vertical,
+      constraints: [C.fill(1), C.length(2)]
+    )
+    ingest_area, query_area = L.split(
+      main_area,
+      direction: :horizontal,
+      constraints: [C.percentage(40), C.fill(1)]
+    )
+  else
+    # Tall terminal: stacked panels, log strip at bottom
+    ingest_area, query_area, log_area = L.split(
+      total_area,
+      direction: :vertical,
+      constraints: [C.length(9), C.fill(1), C.length(2)]
+    )
+  end
+
+  render_ingest_panel(frame, ingest_area, state)
+  render_query_panel(frame, query_area, state)
+  render_activity_log(frame, log_area, state)
+end
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+def parse_options(argv)
+  options = { db: nil }
+  parser  = OptionParser.new do |o|
+    o.banner = "Usage: #{$PROGRAM_NAME} DOC_DIR [options]"
+    o.on("--db PATH", "Persist sqlite-vec DB to PATH (default: temp file)") do |p|
+      options[:db] = p
+    end
+    o.on("-h", "--help") { puts o; exit }
+  end
+  remaining = parser.parse(argv)
+  doc_dir   = remaining.first
+  abort parser.banner + "\n\nError: DOC_DIR is required." if doc_dir.nil?
+  abort "Error: #{doc_dir} is not a directory." unless File.directory?(doc_dir)
+  options[:doc_dir] = doc_dir
+  options
+end
+
+def run_pipeline(options)
+  doc_dir = options[:doc_dir]
+  tmp_dir = Dir.mktmpdir("ractor_rag") unless options[:db]
+  db_path = (options[:db] || File.join(tmp_dir, "index.db")).freeze
+
+  # ── Queue creation ──────────────────────────────────────────────────────────
+  doc_queue      = RactorQueue.new(capacity: DOC_QUEUE_CAP)
+  chunk_queue    = RactorQueue.new(capacity: CHUNK_QUEUE_CAP)
+  embed_queue    = RactorQueue.new(capacity: EMBED_QUEUE_CAP)
+  progress_queue = RactorQueue.new(capacity: PROGRESS_QUEUE_CAP)
+  query_jobs     = RactorQueue.new(capacity: QUERY_JOBS_CAP)
+  query_results  = RactorQueue.new(capacity: QUERY_RESULTS_CAP)
+
+  # ── Model warm-up: seeds ~/.cache/huggingface/ so Ractor loads are fast ────
+  $stderr.puts "Warming embedding model cache (first run may download ~90 MB)..."
+  Informers.pipeline("embedding", MODEL_NAME)
+
+  # ── DB schema setup ─────────────────────────────────────────────────────────
+  setup_db(db_path)
+
+  # ── Spawn Ractors (Writer first so DB is ready before QueryEmbedder) ───────
+  _writer    = start_writer(db_path, embed_queue, progress_queue, N_EMBEDDERS)
+  _embedders = start_embedders(N_EMBEDDERS, chunk_queue, embed_queue, progress_queue)
+  _chunkers  = start_chunkers(N_CHUNKERS, doc_queue, chunk_queue, progress_queue, N_EMBEDDERS)
+  _qe        = start_query_embedder(db_path, query_jobs, query_results)
+  _reader    = start_reader(doc_dir, doc_queue, progress_queue, N_CHUNKERS)
+
+  # ── TUI render loop ─────────────────────────────────────────────────────────
+  state    = initial_state
+  query_id = 0
+
+  RatatuiRuby.guard_io do
+    RatatuiRuby.run do |tui|
+      loop do
+        # ① Drain queues
+        drain_queues(state, progress_queue, query_results)
+
+        # ② Render frame
+        tui.draw { |frame| render_frame(frame, state) }
+
+        # ③ Poll input (16ms timeout ≈ 60 FPS)
+        event = tui.poll_event(timeout: 0.016)
+        next unless event
+
+        case event
+        in { type: :key, code: "q" }
+          break
+        in { type: :key, code: "enter" }
+          unless state.input_buffer.strip.empty?
+            job = Ractor.make_shareable(
+              QueryJob.new(query_id += 1, state.input_buffer.strip.freeze)
+            )
+            query_jobs.try_push(job)
+            state.input_buffer.clear
+          end
+        in { type: :key, code: "backspace" }
+          state.input_buffer.chop!
+        in { type: :key, code: String => char } if char.length == 1
+          state.input_buffer << char
+        in { type: :resize }
+          size = RatatuiRuby.get_terminal_size
+          state.layout = compute_layout(size)
+        else
+          # other events — continue
+        end
+      end
+    end
+  end
+
+  # ── Graceful shutdown ───────────────────────────────────────────────────────
+  query_jobs.try_push(:shutdown)
+  puts "\nIndexed #{state.stored_count} chunks from #{state.docs_read} documents."
+  puts "DB: #{db_path}" if options[:db]
+ensure
+  FileUtils.rm_rf(tmp_dir) if tmp_dir && !options[:db]
+end
+
+# Guard: only run when invoked directly, not when loaded for --test-chunk / --test-db
+unless ARGV.first&.start_with?("--test")
+  run_pipeline(parse_options(ARGV))
 end
