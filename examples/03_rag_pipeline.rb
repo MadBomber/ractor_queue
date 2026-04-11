@@ -84,3 +84,35 @@ AppState = Struct.new(
   :layout,          # :horizontal | :vertical
   keyword_init: true
 )
+
+# ── Text chunking ──────────────────────────────────────────────────────────────
+
+# Split +text+ into overlapping fixed-size chunks, splitting on whitespace.
+# Returns an Array of Strings, each between MIN_CHUNK and CHUNK_SIZE characters.
+def chunk_text(text, size: CHUNK_SIZE, overlap: CHUNK_OVERLAP, min: MIN_CHUNK)
+  chunks = []
+  start  = 0
+  while start < text.length
+    stop = [start + size, text.length].min
+    if stop < text.length
+      # Walk back to a whitespace boundary so we don't cut mid-word
+      ws = text.rindex(/\s/, stop)
+      stop = ws if ws && ws > start + min
+    end
+    chunk = text[start...stop]
+    chunks << chunk if chunk.length >= min
+    step  = stop - overlap
+    start = step > start ? step : stop  # guard: always advance
+  end
+  chunks
+end
+
+if __FILE__ == $PROGRAM_NAME && ARGV.first == "--test-chunk"
+  sample = ("word " * 200).strip
+  chunks = chunk_text(sample)
+  raise "expected multiple chunks" unless chunks.size > 1
+  raise "chunk too long" if chunks.any? { |c| c.length > CHUNK_SIZE + 10 }
+  raise "overlap not working" if chunks.size > 1 && !chunks[0][-CHUNK_OVERLAP..]&.then { |tail| chunks[1].start_with?(tail.split.first || "") }
+  puts "chunk_text: ok (#{chunks.size} chunks from #{sample.length} chars)"
+  exit 0
+end
