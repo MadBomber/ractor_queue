@@ -227,7 +227,7 @@ def start_reader(dir, doc_queue, progress_queue, n_chunkers)
   Ractor.new(dir.freeze, doc_queue, progress_queue, n_chunkers) do |dir, doc_queue, progress_queue, n_chunkers|
     files = Dir.glob(File.join(dir, "**", "*.{txt,md,rb}")).sort
     total = files.size
-    progress_queue.try_push(
+    progress_queue.push(
       Ractor.make_shareable(ProgressEvent.new(:total, total, "found #{total} files in #{dir}"))
     )
     files.each_with_index do |path, i|
@@ -241,13 +241,13 @@ end
 
 # ── Task 6: Chunkers ────────────────────────────────────────────────────────────
 # N Ractors: pop RawDocuments, split into RawChunks, propagate :shutdown.
-def start_chunkers(n, doc_queue, chunk_queue, progress_queue)
+def start_chunkers(n, doc_queue, chunk_queue, progress_queue, n_embedders)
   Array.new(n) do
-    Ractor.new(doc_queue, chunk_queue, progress_queue) do |doc_queue, chunk_queue, progress_queue|
+    Ractor.new(doc_queue, chunk_queue, progress_queue, n_embedders) do |doc_queue, chunk_queue, progress_queue, n_embedders|
       chunk_count = 0
       loop do
         item = doc_queue.pop
-        break if item == :shutdown
+        break if item.equal?(:shutdown)
 
         chunks = chunk_text(item.text)
         chunks.each_with_index do |text, idx|
@@ -261,7 +261,8 @@ def start_chunkers(n, doc_queue, chunk_queue, progress_queue)
           )
         )
       end
-      chunk_queue.push(:shutdown)
+      # Push one pill per Embedder so every Embedder can receive its own :shutdown.
+      n_embedders.times { chunk_queue.push(:shutdown) }
     end
   end
 end
@@ -275,7 +276,7 @@ def start_embedders(n, chunk_queue, embed_queue, progress_queue)
       embed_count = 0
       loop do
         item = chunk_queue.pop
-        break if item == :shutdown
+        break if item.equal?(:shutdown)
 
         t0     = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         vector = model.(item.text)
@@ -299,9 +300,10 @@ def start_embedders(n, chunk_queue, embed_queue, progress_queue)
 end
 
 # ── Task 8: Writer ──────────────────────────────────────────────────────────────
-# Single Ractor with exclusive write access. Batches inserts; pushes :done on finish.
-def start_writer(db_path, embed_queue, progress_queue)
-  Ractor.new(db_path, embed_queue, progress_queue) do |db_path, embed_queue, progress_queue|
+# Single Ractor with exclusive write access. Batches inserts; pushes
+# ProgressEvent(:done,...) to progress_queue when all Embedders have shut down.
+def start_writer(db_path, embed_queue, progress_queue, n_embedders)
+  Ractor.new(db_path, embed_queue, progress_queue, n_embedders) do |db_path, embed_queue, progress_queue, n_embedders|
     db        = open_write_db(db_path)
     batch     = []
     total     = 0
@@ -320,14 +322,21 @@ def start_writer(db_path, embed_queue, progress_queue)
       batch.clear
     end
 
+    # Each Embedder pushes exactly one :shutdown pill. Wait for all of them
+    # so no in-flight EmbeddedChunks are discarded before the final flush.
+    shutdowns_seen = 0
     loop do
       item = embed_queue.pop
-      if item == :shutdown
-        flush.()
-        break
+      if item.equal?(:shutdown)
+        shutdowns_seen += 1
+        if shutdowns_seen == n_embedders
+          flush.()
+          break
+        end
+      else
+        batch << item
+        flush.() if batch.size >= BATCH_SIZE
       end
-      batch << item
-      flush.() if batch.size >= BATCH_SIZE
     end
 
     db.close
@@ -348,7 +357,7 @@ def start_query_embedder(db_path, query_jobs, query_results)
     query_id = 0
     loop do
       job = query_jobs.pop
-      break if job == :shutdown
+      break if job.equal?(:shutdown)
 
       vector = model.(job.text)
       blob   = vector.pack("f*").freeze
