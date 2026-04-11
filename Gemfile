@@ -4,9 +4,9 @@ gemspec
 group :development, :test do
   gem 'aigcm'
   gem 'debug_me'
+  gem 'informers'
   gem 'minitest'
   gem 'ratatui_ruby'
-  gem 'sqlite3'
   gem 'sqlite-vec'
-  gem 'informers'
+  gem 'sqlite3'
 end
