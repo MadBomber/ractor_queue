@@ -391,15 +391,15 @@ def initial_state
     embed_times:     [],
     input_buffer:    +"",
     current_result:  nil,
-    layout:          compute_layout(size)
+    layout:          compute_layout(size.width, size.height)
   )
 end
 
 # Returns :horizontal (side-by-side) or :vertical (stacked).
 # Horizontal for wide/short terminals; vertical for taller ones.
-def compute_layout(size)
-  return :horizontal if size.width.to_f / size.height > 2.5
-  return :horizontal if size.height < 25
+def compute_layout(width, height)
+  return :horizontal if width.to_f / height > 2.5
+  return :horizontal if height < 25
   :vertical
 end
 
@@ -572,18 +572,21 @@ def run_pipeline(options)
   # ── DB schema setup ─────────────────────────────────────────────────────────
   setup_db(db_path)
 
-  # ── Spawn Ractors (Writer first so DB is ready before QueryEmbedder) ───────
-  _writer    = start_writer(db_path, embed_queue, progress_queue, N_EMBEDDERS)
-  _embedders = start_embedders(N_EMBEDDERS, chunk_queue, embed_queue, progress_queue)
-  _chunkers  = start_chunkers(N_CHUNKERS, doc_queue, chunk_queue, progress_queue, N_EMBEDDERS)
-  _qe        = start_query_embedder(db_path, query_jobs, query_results)
-  _reader    = start_reader(doc_dir, doc_queue, progress_queue, N_CHUNKERS)
-
-  # ── TUI render loop ─────────────────────────────────────────────────────────
+  # ── TUI render loop + Ractor spawning ──────────────────────────────────────
+  # guard_io wraps both spawning and the render loop so Informers model-load
+  # output from Ractor initialization cannot corrupt the terminal.
   state    = initial_state
   query_id = 0
+  writer   = nil
 
   RatatuiRuby.guard_io do
+    # Spawn Ractors (Writer first so DB is ready before QueryEmbedder)
+    writer     = start_writer(db_path, embed_queue, progress_queue, N_EMBEDDERS)
+    _embedders = start_embedders(N_EMBEDDERS, chunk_queue, embed_queue, progress_queue)
+    _chunkers  = start_chunkers(N_CHUNKERS, doc_queue, chunk_queue, progress_queue, N_EMBEDDERS)
+    _qe        = start_query_embedder(db_path, query_jobs, query_results)
+    _reader    = start_reader(doc_dir, doc_queue, progress_queue, N_CHUNKERS)
+
     RatatuiRuby.run do |tui|
       loop do
         # ① Drain queues
@@ -604,16 +607,15 @@ def run_pipeline(options)
             job = Ractor.make_shareable(
               QueryJob.new(query_id += 1, state.input_buffer.strip.freeze)
             )
-            query_jobs.try_push(job)
+            query_jobs.push(job)  # blocking: guarantee delivery, don't drop user input
             state.input_buffer.clear
           end
         in { type: :key, code: "backspace" }
           state.input_buffer.chop!
         in { type: :key, code: String => char } if char.length == 1
           state.input_buffer << char
-        in { type: :resize }
-          size = RatatuiRuby.get_terminal_size
-          state.layout = compute_layout(size)
+        in { type: :resize, width: w, height: h }
+          state.layout = compute_layout(w, h)
         else
           # other events — continue
         end
@@ -622,7 +624,8 @@ def run_pipeline(options)
   end
 
   # ── Graceful shutdown ───────────────────────────────────────────────────────
-  query_jobs.try_push(:shutdown)
+  query_jobs.push(:shutdown)       # blocking: guarantee QueryEmbedder receives it
+  writer&.take rescue nil          # wait for Writer to flush final batch before cleanup
   puts "\nIndexed #{state.stored_count} chunks from #{state.docs_read} documents."
   puts "DB: #{db_path}" if options[:db]
 ensure
