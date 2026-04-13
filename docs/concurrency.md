@@ -25,6 +25,86 @@ retry 16+:    sleep(0.0001) → OS thread yields core, prevents scheduler storm
 
 ---
 
+## Choosing a Push/Pop Variant
+
+RactorQueue provides three levels of push and pop, each suited to a different processing context:
+
+| Variant | Blocking strategy | Returns when empty/full |
+|---|---|---|
+| `try_push` / `try_pop` | Never blocks | Immediately (`false` / `EMPTY`) |
+| `push` / `pop` | Phase 1: `sleep(0)` × 16 → Phase 2: `sleep(0.0001)` | After space / item available |
+| `async_push` / `async_pop` | Always `sleep(0)` (never escalates) | After space / item available |
+
+### `try_push` / `try_pop` — Non-blocking
+
+Use when you cannot afford to wait: poll loops, event-driven code, or any place where "nothing ready yet" is a normal condition to handle yourself.
+
+```ruby
+# Drain without blocking — caller decides what to do when empty
+loop do
+  v = q.try_pop
+  break if v.equal?(RactorQueue::EMPTY)
+  process(v)
+end
+```
+
+### `push` / `pop` — OS-thread backoff
+
+Use in **Ractors** and **plain Threads** (no fiber scheduler installed).
+
+The two-phase backoff suspends the OS thread after 16 fast retries, freeing the core for other Ractors or threads to make progress:
+
+```
+retries 0–15:  sleep(0)        → fast spin, low first-item latency
+retries 16+:   sleep(0.0001)   → core is yielded; scheduler can run other threads
+```
+
+The eventual `sleep(0.0001)` is what prevents spin-wait storms under high Ractor contention. `async_push`/`async_pop` never reach this phase, which makes them unsuitable for OS-thread contexts under sustained back-pressure — they burn more CPU without making faster progress.
+
+```ruby
+# Correct for Ractor workers
+Ractor.new(queue) do |q|
+  loop do
+    item = q.pop          # OS thread parks after 16 retries
+    break if item == :done
+    process(item)
+  end
+end
+```
+
+### `async_push` / `async_pop` — Fiber-scheduler-aware
+
+Use inside **`Async { }` blocks** (async-rb, Falcon, any fiber-scheduler environment).
+
+In a fiber-scheduled context, `sleep(0)` does not sleep at all — it yields execution to the scheduler, which runs another ready fiber and resumes this one when the queue state may have changed. This enables cooperative waiting without blocking the OS thread.
+
+```ruby
+require "async"
+
+q = RactorQueue.new(capacity: 8)
+
+Async do |task|
+  # Pusher and popper fibers cooperate — neither blocks an OS thread
+  task.async { 5.times { |i| sleep(0.01); q.async_push(i) } }
+  task.async { 5.times { puts q.async_pop } }
+end
+```
+
+`push`/`pop` also work inside Async blocks, but their Phase 2 `sleep(0.0001)` holds the fiber suspended for 100 µs each retry — unnecessary when the scheduler can wake the fiber the moment another fiber pushes or pops. `async_*` avoids that artificial delay.
+
+Outside a fiber scheduler, `sleep(0)` returns almost immediately (it is a real OS call with near-zero duration). This means `async_push`/`async_pop` become a tight spin loop in plain Thread or Ractor contexts — higher CPU usage than `push`/`pop` with no throughput benefit.
+
+### Summary
+
+| Processing context | Recommended variant |
+|---|---|
+| Ractor worker | `push` / `pop` |
+| Plain Thread (no scheduler) | `push` / `pop` |
+| `Async { }` fiber (async-rb / Falcon) | `async_push` / `async_pop` |
+| Poll loop / event-driven / non-blocking | `try_push` / `try_pop` |
+
+---
+
 ## Two-Queue Deadlock
 
 Chaining two bounded queues in a pipeline with small capacities can deadlock:

@@ -62,6 +62,14 @@ q.pop               # => 99
 # Blocking with timeout
 q.pop(timeout: 0.5) # raises RactorQueue::TimeoutError after 500 ms if still empty
 
+# Fiber-scheduler-aware — use inside Async { } blocks
+require "async"
+Async do
+  q.async_push(42)            # => self  (yields via sleep(0) while full)
+  q.async_pop                 # => 42   (yields via sleep(0) while empty)
+  q.async_pop(timeout: 1.0)   # raises RactorQueue::TimeoutError after 1 s
+end
+
 # State (approximate under concurrency)
 q.size              # => Integer
 q.empty?            # => true / false
@@ -81,8 +89,10 @@ Ractor.shareable?(q) # => true
 | `RactorQueue.new(capacity:, validate_shareable: false)` | `RactorQueue` instance | Capacity rounded up to power-of-two minimum |
 | `try_push(obj)` | `true` / `false` | Non-blocking; `false` if full |
 | `try_pop` | `obj` or `RactorQueue::EMPTY` | Non-blocking; `EMPTY` sentinel if queue was empty; `nil` if `nil` was pushed |
-| `push(obj, timeout: nil)` | `self` | Blocks until space; raises `TimeoutError` if timeout expires |
-| `pop(timeout: nil)` | `obj` | Blocks until item; raises `TimeoutError` if timeout expires |
+| `push(obj, timeout: nil)` | `self` | Blocking; OS-thread backoff (sleep → suspend); best for Ractors and plain Threads |
+| `pop(timeout: nil)` | `obj` | Blocking; OS-thread backoff; best for Ractors and plain Threads |
+| `async_push(obj, timeout: nil)` | `self` | Fiber-scheduler-aware blocking push; yields via `sleep(0)`; best inside `Async { }` blocks |
+| `async_pop(timeout: nil)` | `obj` | Fiber-scheduler-aware blocking pop; yields via `sleep(0)`; best inside `Async { }` blocks |
 | `size` | Integer | Approximate element count |
 | `empty?` | Boolean | Approximate |
 | `full?` | Boolean | Approximate |

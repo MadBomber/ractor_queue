@@ -106,6 +106,64 @@ q.pop(timeout: 0.5)         # raises TimeoutError after 500 ms
 
 ---
 
+### `async_push(obj, timeout: nil) → self`
+
+Enqueues `obj`, yielding to the fiber scheduler on every full check via `sleep(0)`.
+
+- Returns `self` (chainable).
+- Raises `TimeoutError` if `timeout:` is given and the deadline expires before space becomes available.
+- `timeout: 0` tries exactly once and immediately raises if the queue is full.
+- If `validate_shareable: true`, raises `NotShareableError` before attempting the push.
+
+Unlike `push`, the blocking loop **never escalates** to a longer sleep. Every retry calls `sleep(0)`. In a fiber-scheduled context (`Async { }`, Falcon), `sleep(0)` cooperatively yields to the reactor so other fibers run while this one waits. See [Choosing a Push/Pop Variant](concurrency.md#choosing-a-pushpop-variant) for full context guidance.
+
+```ruby
+require "async"
+
+q = RactorQueue.new(capacity: 4)
+
+Async do |task|
+  task.async { 5.times { |i| q.async_push(i) } }
+  task.async { 5.times { puts q.async_pop } }
+end
+
+# async_push returns self — chainable:
+# Async { q.async_push(1).async_push(2) }  # (only safe if queue has space)
+```
+
+---
+
+### `async_pop(timeout: nil) → obj`
+
+Dequeues the next element, yielding to the fiber scheduler on every empty check via `sleep(0)`.
+
+- Returns the dequeued object (including `nil` if `nil` was pushed).
+- Raises `TimeoutError` if `timeout:` is given and the deadline expires before an element becomes available.
+- `timeout: 0` tries exactly once and immediately raises if the queue is empty.
+- Unlike `try_pop`, never returns `RactorQueue::EMPTY` — it blocks (cooperatively) until an item is available.
+
+```ruby
+require "async"
+
+q = RactorQueue.new(capacity: 8)
+
+# Basic async pop
+Async do
+  q.async_push(:hello)
+  item = q.async_pop           # => :hello
+  puts item
+end
+
+# With timeout
+Async do
+  q.async_pop(timeout: 0.5)   # raises TimeoutError if nothing arrives in 500 ms
+rescue RactorQueue::TimeoutError
+  puts "timed out"
+end
+```
+
+---
+
 ### `size → Integer`
 
 Returns the approximate number of elements currently in the queue.
