@@ -69,21 +69,28 @@ producer.value
 puts "Squares from Ractor producer: #{consumer.value.inspect}"
 
 # ─────────────────────────────────────────────────────────────
-# 3. try_pop and RactorQueue::EMPTY
+# 3. try_push / try_pop — Non-Blocking Access
 #
-# try_push / try_pop never block. try_pop returns RactorQueue::EMPTY
-# (a unique frozen sentinel) when the queue is empty, not nil.
-# This makes nil an unambiguous payload value.
+# try_push returns true if the item was enqueued, false if the queue
+# is full. try_pop returns the next item, or RactorQueue::EMPTY (a
+# unique frozen sentinel) if the queue is empty — never nil, so nil
+# is an unambiguous payload value. Neither call ever blocks.
 # ─────────────────────────────────────────────────────────────
 
-section "3. try_pop and RactorQueue::EMPTY"
+section "3. try_push / try_pop — Non-Blocking Access"
 
 demo_q = RactorQueue.new(capacity: 8)
 
-# --- non-blocking push ---
-demo_q.try_push(42)
-demo_q.try_push(:hello)
-demo_q.try_push(nil)   # nil is a valid payload
+# --- non-blocking push: returns true when space is available ---
+r1 = demo_q.try_push(42)
+r2 = demo_q.try_push(:hello)
+r3 = demo_q.try_push(nil)   # nil is a valid payload
+
+puts "try_push results (true = enqueued):"
+puts "  push 42     => #{r1.inspect}"
+puts "  push :hello => #{r2.inspect}"
+puts "  push nil    => #{r3.inspect}"
+puts
 
 # --- non-blocking pop ---
 v1 = demo_q.try_pop    # => 42
@@ -247,6 +254,69 @@ rescue RactorQueue::NotShareableError => err
   "Ractor caught NotShareableError: #{err.message}"
 end
 puts bad_producer.value
+
+# ─────────────────────────────────────────────────────────────
+# 8. async_push / async_pop — Fiber-Scheduler-Aware Blocking
+#
+# async_push and async_pop use sleep(0) on every full/empty check
+# instead of the Thread.pass → sleep(100µs) backoff used by push/pop.
+# Inside an Async { } reactor, sleep(0) yields cooperatively to the
+# fiber scheduler so other fibers run while waiting — no OS-thread
+# sleeping, no spinning. Outside a reactor (plain Thread), sleep(0)
+# returns almost immediately, making them a fine low-latency option
+# in regular thread code too.
+# ─────────────────────────────────────────────────────────────
+
+section "8. async_push / async_pop — Fiber-Scheduler-Aware"
+
+require "async"
+
+aq = RactorQueue.new(capacity: 8)
+
+# async_push returns self (the queue); async_pop returns the item.
+Async do
+  ret  = aq.async_push(:hello)
+  item = aq.async_pop
+  puts "async_push return  => #{ret.equal?(aq) ? "self (the queue)" : ret.inspect}"
+  puts "async_pop received => #{item.inspect}"
+end
+
+# ── Cooperative producer / consumer pair ──────────────────────────────────────
+# async_pop parks the popper fiber via sleep(0) while the queue is empty,
+# yielding to the reactor so the pusher can run. Pushes and pops interleave
+# without any OS-thread blocking.
+
+aq2 = RactorQueue.new(capacity: 4)
+log = []
+
+Async do |task|
+  pusher = task.async do
+    3.times do |i|
+      sleep(0.005)            # yields to reactor; popper can run while we wait
+      log << "push #{i}"
+      aq2.async_push(i)
+    end
+  end
+
+  popper = task.async do
+    3.times do
+      v = aq2.async_pop       # parks cooperatively until an item arrives
+      log << "pop  #{v}"
+    end
+  end
+
+  pusher.wait
+  popper.wait
+end
+
+puts "Interleaved fiber events: #{log.inspect}"
+
+# ── async_pop with timeout ────────────────────────────────────────────────────
+Async do
+  RactorQueue.new(capacity: 4).async_pop(timeout: 0.05)
+rescue RactorQueue::TimeoutError
+  puts "async_pop on empty queue raised TimeoutError after 50 ms"
+end
 
 puts "\n#{SEPARATOR}"
 puts "  Done. All Ractor examples completed successfully."

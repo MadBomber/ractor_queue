@@ -5,6 +5,14 @@
 
 using namespace Rice;
 
+// Tell Rice how to mark a StandardQueue during GC.
+namespace Rice {
+  template<>
+  void ruby_mark<StandardQueue>(StandardQueue* data) {
+    if (data) data->mark();
+  }
+}
+
 // Global sentinel — a unique frozen Ruby Object used to signal "queue empty"
 // from c_try_pop. Pinned as a permanent GC root so it is never collected.
 VALUE g_empty_sentinel = Qnil;  // Set in Init_ractor_queue
@@ -36,10 +44,8 @@ extern "C" void Init_ractor_queue() {
   rb_define_const(rb_cRQ, "EMPTY_SENTINEL", g_empty_sentinel);
 
   // Mark the wrapped C++ type as Ractor-shareable when frozen.
-  // Rice only sets RUBY_TYPED_FREE_IMMEDIATELY; we OR-in RUBY_TYPED_FROZEN_SHAREABLE
-  // so that Ractor.make_shareable(instance) succeeds after Ruby-side freeze.
   Data_Type<StandardQueue>::ruby_data_type()->flags |= RUBY_TYPED_FROZEN_SHAREABLE;
 
-  // Restore: methods defined after this point (by other code) are not auto-marked Ractor-safe.
+  // Restore: methods defined after this point are not auto-marked Ractor-safe.
   rb_ext_ractor_safe(false);
 }

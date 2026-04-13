@@ -34,6 +34,35 @@ class RactorQueue
       blocking_pop(timeout)
     end
 
+    # Fiber-scheduler-aware pop. Yields to the async reactor on every empty
+    # check via sleep(0) rather than spinning with Thread.pass first.
+    # Use inside Async { } blocks. Degrades gracefully to a near-no-op sleep
+    # in plain Thread context (no scheduler installed).
+    # Raises RactorQueue::TimeoutError if timeout expires.
+    def async_pop(timeout: nil)
+      deadline = timeout ? Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout : nil
+      loop do
+        result = c_try_pop
+        return result unless result.equal?(EMPTY_SENTINEL)
+        raise TimeoutError if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        sleep(0)
+      end
+    end
+
+    # Fiber-scheduler-aware push. Yields to the async reactor on every full
+    # check via sleep(0) rather than spinning with Thread.pass first.
+    # Use inside Async { } blocks. Degrades gracefully in plain Thread context.
+    # Raises RactorQueue::TimeoutError if timeout expires.
+    def async_push(obj, timeout: nil)
+      validate_shareable!(obj) if @validate_shareable
+      deadline = timeout ? Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout : nil
+      loop do
+        return self if c_try_push(obj)
+        raise TimeoutError if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        sleep(0)
+      end
+    end
+
     # Approximate current element count.
     def size    = was_size
 
@@ -77,7 +106,7 @@ class RactorQueue
         raise TimeoutError if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         if spins < SPIN_THRESHOLD
           spins += 1
-          Thread.pass
+          sleep(0)  # sleep(0) works in both Ractor and Thread; Thread.pass is forbidden in Ractors
         else
           sleep(SLEEP_INTERVAL)
         end
@@ -97,7 +126,7 @@ class RactorQueue
         raise TimeoutError if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         if spins < SPIN_THRESHOLD
           spins += 1
-          Thread.pass
+          sleep(0)  # sleep(0) works in both Ractor and Thread; Thread.pass is forbidden in Ractors
         else
           sleep(SLEEP_INTERVAL)
         end
