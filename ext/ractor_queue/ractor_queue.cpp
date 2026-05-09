@@ -32,10 +32,15 @@ extern "C" void Init_ractor_queue() {
                    Arg("v").setValue())
     .define_method("c_try_pop",  &StandardQueue::try_pop,
                    Return().setValue())
-    .define_method("capacity",   &StandardQueue::capacity)
-    .define_method("was_size",   &StandardQueue::was_size)
-    .define_method("was_empty",  &StandardQueue::was_empty)
-    .define_method("was_full",   &StandardQueue::was_full);
+    .define_method("capacity",     &StandardQueue::capacity)
+    .define_method("was_size",     &StandardQueue::was_size)
+    .define_method("was_empty",    &StandardQueue::was_empty)
+    .define_method("was_full",     &StandardQueue::was_full)
+    // gc_unprotect(VALUE self_val): called once post-construction with the Ruby
+    // VALUE of the queue itself so rb_gc_writebarrier_unprotect can be applied.
+    // See standard_queue.h::gc_unprotect for the full rationale.
+    .define_method("_gc_unprotect", &StandardQueue::gc_unprotect,
+                   Arg("self_val").setValue());
 
   // Create the permanent EMPTY_SENTINEL object and pin it as a GC root.
   g_empty_sentinel = rb_obj_alloc(rb_cObject);

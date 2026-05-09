@@ -41,7 +41,7 @@ consumer.value
 
 ## Implementation
 
-RactorQueue wraps [`max0x7ba/atomic_queue`](https://github.com/max0x7ba/atomic_queue) — a C++14 header-only, cache-line-aligned, lock-free MPMC queue — via [Rice](https://github.com/jasonroelofs/rice) 4.x bindings. The C++ buffer is unaffected by Ruby's freeze; only the Ruby wrapper object is frozen to satisfy `Ractor.make_shareable`.
+RactorQueue wraps [`max0x7ba/atomic_queue`](https://github.com/max0x7ba/atomic_queue) — a C++17 header-only, cache-line-aligned, lock-free MPMC queue — via [Rice](https://github.com/jasonroelofs/rice) 4.x bindings. The C++ buffer is unaffected by Ruby's freeze; only the Ruby wrapper object is frozen to satisfy `Ractor.make_shareable`.
 
 ## Next Steps
 

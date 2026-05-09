@@ -106,7 +106,7 @@ class RactorQueue
         raise TimeoutError if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         if spins < SPIN_THRESHOLD
           spins += 1
-          sleep(0)  # sleep(0) works in both Ractor and Thread; Thread.pass is forbidden in Ractors
+          Thread.pass  # ~100ns cooperative yield; works in Ractors and Threads
         else
           sleep(SLEEP_INTERVAL)
         end
@@ -126,7 +126,7 @@ class RactorQueue
         raise TimeoutError if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         if spins < SPIN_THRESHOLD
           spins += 1
-          sleep(0)  # sleep(0) works in both Ractor and Thread; Thread.pass is forbidden in Ractors
+          Thread.pass  # ~100ns cooperative yield; works in Ractors and Threads
         else
           sleep(SLEEP_INTERVAL)
         end

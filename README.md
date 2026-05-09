@@ -14,7 +14,7 @@ producer.value
 consumer.value
 ```
 
-Backed by the [max0x7ba/atomic_queue](https://github.com/max0x7ba/atomic_queue) C++14 header-only library via [Rice](https://github.com/jasonroelofs/rice) 4.x bindings.
+Backed by the [max0x7ba/atomic_queue](https://github.com/max0x7ba/atomic_queue) C++17 header-only library via [Rice](https://github.com/jasonroelofs/rice) 4.x bindings.
 
 ---
 
@@ -258,6 +258,8 @@ Under MRI threads (no Ractors), Ruby's `Queue` is faster because the GVL makes l
 ```sh
 bundle exec ruby examples/01_basic_usage.rb   # Ractor usage patterns
 bundle exec ruby examples/02_performance.rb   # Throughput benchmarks
+bundle exec ruby examples/05_simd.rb          # TF-IDF scoring — SIMD fan-out pattern
+bundle exec ruby examples/06_pipeline.rb      # Semantic chunk ranking — MIMD pipeline pattern
 ```
 
 ---
@@ -278,6 +280,8 @@ bundle exec rake test      # run the test suite
 |---|---|
 | [`examples/01_basic_usage.rb`](examples/01_basic_usage.rb) | Annotated Ractor usage patterns (1P1C, timeout, worker pool, pipeline, validate_shareable) |
 | [`examples/02_performance.rb`](examples/02_performance.rb) | Throughput benchmarks across queue topologies and Ractor counts |
+| [`examples/05_simd.rb`](examples/05_simd.rb) | SIMD fan-out: parallel TF-IDF scoring across W Ractors via `Parallel.map` |
+| [`examples/06_pipeline.rb`](examples/06_pipeline.rb) | MIMD pipeline: 2-stage chunk-rank pipeline via `Parallel.pipeline`, 6 Ractors per stage |
 | [`docs/superpowers/specs/2026-04-10-atomic-queue-design.md`](docs/superpowers/specs/2026-04-10-atomic-queue-design.md) | Original design specification (C extension architecture, Rice bindings, API design decisions) |
 | [`docs/superpowers/plans/`](docs/superpowers/plans/) | Implementation plans for each development phase |
 
