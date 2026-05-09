@@ -477,6 +477,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#choosing-a-pushpop-variant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a Push/Pop Variant
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a Push/Pop Variant">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#try_push-try_pop-non-blocking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        try_push / try_pop — Non-blocking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#push-pop-os-thread-backoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        push / pop — OS-thread backoff
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async_push-async_pop-fiber-scheduler-aware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        async_push / async_pop — Fiber-scheduler-aware
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#two-queue-deadlock" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -660,6 +721,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#choosing-a-pushpop-variant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing a Push/Pop Variant
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing a Push/Pop Variant">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#try_push-try_pop-non-blocking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        try_push / try_pop — Non-blocking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#push-pop-os-thread-backoff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        push / pop — OS-thread backoff
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async_push-async_pop-fiber-scheduler-aware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        async_push / async_pop — Fiber-scheduler-aware
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#two-queue-deadlock" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -769,50 +891,146 @@
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>retry 16+:    sleep(0.0001) → OS thread yields core, prevents scheduler storm
 </span></code></pre></div>
 <hr />
+<h2 id="choosing-a-pushpop-variant">Choosing a Push/Pop Variant<a class="headerlink" href="#choosing-a-pushpop-variant" title="Permanent link">&para;</a></h2>
+<p>RactorQueue provides three levels of push and pop, each suited to a different processing context:</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Blocking strategy</th>
+<th>Returns when empty/full</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>try_push</code> / <code>try_pop</code></td>
+<td>Never blocks</td>
+<td>Immediately (<code>false</code> / <code>EMPTY</code>)</td>
+</tr>
+<tr>
+<td><code>push</code> / <code>pop</code></td>
+<td>Phase 1: <code>sleep(0)</code> × 16 → Phase 2: <code>sleep(0.0001)</code></td>
+<td>After space / item available</td>
+</tr>
+<tr>
+<td><code>async_push</code> / <code>async_pop</code></td>
+<td>Always <code>sleep(0)</code> (never escalates)</td>
+<td>After space / item available</td>
+</tr>
+</tbody>
+</table>
+<h3 id="try_push-try_pop-non-blocking"><code>try_push</code> / <code>try_pop</code> — Non-blocking<a class="headerlink" href="#try_push-try_pop-non-blocking" title="Permanent link">&para;</a></h3>
+<p>Use when you cannot afford to wait: poll loops, event-driven code, or any place where "nothing ready yet" is a normal condition to handle yourself.</p>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Drain without blocking — caller decides what to do when empty</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kp">loop</span><span class="w"> </span><span class="k">do</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="k">break</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">v</span><span class="o">.</span><span class="n">equal?</span><span class="p">(</span><span class="no">RactorQueue</span><span class="o">::</span><span class="no">EMPTY</span><span class="p">)</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="n">process</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">end</span>
+</span></code></pre></div>
+<h3 id="push-pop-os-thread-backoff"><code>push</code> / <code>pop</code> — OS-thread backoff<a class="headerlink" href="#push-pop-os-thread-backoff" title="Permanent link">&para;</a></h3>
+<p>Use in <strong>Ractors</strong> and <strong>plain Threads</strong> (no fiber scheduler installed).</p>
+<p>The two-phase backoff suspends the OS thread after 16 fast retries, freeing the core for other Ractors or threads to make progress:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>retries 0–15:  sleep(0)        → fast spin, low first-item latency
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>retries 16+:   sleep(0.0001)   → core is yielded; scheduler can run other threads
+</span></code></pre></div>
+<p>The eventual <code>sleep(0.0001)</code> is what prevents spin-wait storms under high Ractor contention. <code>async_push</code>/<code>async_pop</code> never reach this phase, which makes them unsuitable for OS-thread contexts under sustained back-pressure — they burn more CPU without making faster progress.</p>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Correct for Ractor workers</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="no">Ractor</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">queue</span><span class="p">)</span><span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="o">|</span><span class="n">q</span><span class="o">|</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="kp">loop</span><span class="w"> </span><span class="k">do</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="n">item</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">q</span><span class="o">.</span><span class="n">pop</span><span class="w">          </span><span class="c1"># OS thread parks after 16 retries</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="k">break</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">item</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="ss">:done</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="n">process</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="k">end</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="k">end</span>
+</span></code></pre></div>
+<h3 id="async_push-async_pop-fiber-scheduler-aware"><code>async_push</code> / <code>async_pop</code> — Fiber-scheduler-aware<a class="headerlink" href="#async_push-async_pop-fiber-scheduler-aware" title="Permanent link">&para;</a></h3>
+<p>Use inside <strong><code>Async { }</code> blocks</strong> (async-rb, Falcon, any fiber-scheduler environment).</p>
+<p>In a fiber-scheduled context, <code>sleep(0)</code> does not sleep at all — it yields execution to the scheduler, which runs another ready fiber and resumes this one when the queue state may have changed. This enables cooperative waiting without blocking the OS thread.</p>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">require</span><span class="w"> </span><span class="s2">&quot;async&quot;</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">)</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="no">Async</span><span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="o">|</span><span class="n">task</span><span class="o">|</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="c1"># Pusher and popper fibers cooperate — neither blocks an OS thread</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="n">task</span><span class="o">.</span><span class="n">async</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mi">5</span><span class="o">.</span><span class="n">times</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="nb">sleep</span><span class="p">(</span><span class="mi">0</span><span class="o">.</span><span class="mo">01</span><span class="p">);</span><span class="w"> </span><span class="n">q</span><span class="o">.</span><span class="n">async_push</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="n">task</span><span class="o">.</span><span class="n">async</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="mi">5</span><span class="o">.</span><span class="n">times</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nb">puts</span><span class="w"> </span><span class="n">q</span><span class="o">.</span><span class="n">async_pop</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="k">end</span>
+</span></code></pre></div>
+<p><code>push</code>/<code>pop</code> also work inside Async blocks, but their Phase 2 <code>sleep(0.0001)</code> holds the fiber suspended for 100 µs each retry — unnecessary when the scheduler can wake the fiber the moment another fiber pushes or pops. <code>async_*</code> avoids that artificial delay.</p>
+<p>Outside a fiber scheduler, <code>sleep(0)</code> returns almost immediately (it is a real OS call with near-zero duration). This means <code>async_push</code>/<code>async_pop</code> become a tight spin loop in plain Thread or Ractor contexts — higher CPU usage than <code>push</code>/<code>pop</code> with no throughput benefit.</p>
+<h3 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Processing context</th>
+<th>Recommended variant</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ractor worker</td>
+<td><code>push</code> / <code>pop</code></td>
+</tr>
+<tr>
+<td>Plain Thread (no scheduler)</td>
+<td><code>push</code> / <code>pop</code></td>
+</tr>
+<tr>
+<td><code>Async { }</code> fiber (async-rb / Falcon)</td>
+<td><code>async_push</code> / <code>async_pop</code></td>
+</tr>
+<tr>
+<td>Poll loop / event-driven / non-blocking</td>
+<td><code>try_push</code> / <code>try_pop</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
 <h2 id="two-queue-deadlock">Two-Queue Deadlock<a class="headerlink" href="#two-queue-deadlock" title="Permanent link">&para;</a></h2>
 <p>Chaining two bounded queues in a pipeline with small capacities can deadlock:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>main blocks pushing to jobs (full)
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  ↓
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>workers block pushing to results (full)
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  ↓
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>main cannot drain results (it is blocked on jobs)
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  ↓  deadlock
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>main blocks pushing to jobs (full)
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  ↓
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>workers block pushing to results (full)
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  ↓
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>main cannot drain results (it is blocked on jobs)
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  ↓  deadlock
 </span></code></pre></div>
 <p><strong>Example of the broken pattern:</strong></p>
-<div class="language-ruby highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># DANGEROUS — both queues are small; deadlock is possible</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">jobs</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">)</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">)</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># If main fills `jobs` and workers fill `results` simultaneously,</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># the whole system locks up.</span>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># DANGEROUS — both queues are small; deadlock is possible</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">jobs</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">)</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">64</span><span class="p">)</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># If main fills `jobs` and workers fill `results` simultaneously,</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># the whole system locks up.</span>
 </span></code></pre></div>
 <p><strong>Fix 1: Size queues to hold all in-flight items</strong></p>
-<div class="language-ruby highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="no">ITEMS</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mi">10_000</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="no">WORKERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">jobs</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="no">ITEMS</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="no">WORKERS</span><span class="p">)</span><span class="w">  </span><span class="c1"># never fills up</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="no">ITEMS</span><span class="p">)</span><span class="w">             </span><span class="c1"># never fills up</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="no">ITEMS</span><span class="o">.</span><span class="n">times</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w">    </span><span class="c1"># non-blocking — queue is large enough</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="no">WORKERS</span><span class="o">.</span><span class="n">times</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="ss">:stop</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="no">ITEMS</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="mi">10_000</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="no">WORKERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">jobs</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="no">ITEMS</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="no">WORKERS</span><span class="p">)</span><span class="w">  </span><span class="c1"># never fills up</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="no">ITEMS</span><span class="p">)</span><span class="w">             </span><span class="c1"># never fills up</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="no">ITEMS</span><span class="o">.</span><span class="n">times</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">}</span><span class="w">    </span><span class="c1"># non-blocking — queue is large enough</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="no">WORKERS</span><span class="o">.</span><span class="n">times</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="ss">:stop</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
 </span></code></pre></div>
 <p><strong>Fix 2: Drain results asynchronously</strong></p>
-<div class="language-ruby highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">jobs</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">128</span><span class="p">)</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">128</span><span class="p">)</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># A dedicated drain Ractor processes results while main keeps pushing jobs</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">drainer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">Ractor</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="o">|</span><span class="n">rq</span><span class="o">|</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">[]</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="kp">loop</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rq</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="ss">timeout</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span><span class="w"> </span><span class="k">break</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="ss">:stop</span><span class="p">;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="p">}</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="n">all</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="k">end</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># Now main can push jobs freely — it never needs to read results</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="no">ITEMS</span><span class="o">.</span><span class="n">times</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="no">WORKERS</span><span class="o">.</span><span class="n">times</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="ss">:stop</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="n">results</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="ss">:stop</span><span class="p">)</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="n">drainer</span><span class="o">.</span><span class="n">value</span><span class="w">  </span><span class="c1"># collect everything after all workers are done</span>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">jobs</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">128</span><span class="p">)</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">128</span><span class="p">)</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="c1"># A dedicated drain Ractor processes results while main keeps pushing jobs</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">drainer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">Ractor</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="o">|</span><span class="n">rq</span><span class="o">|</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="n">all</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">[]</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="kp">loop</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rq</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="ss">timeout</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="p">);</span><span class="w"> </span><span class="k">break</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="ss">:stop</span><span class="p">;</span><span class="w"> </span><span class="n">all</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="n">all</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="k">end</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="c1"># Now main can push jobs freely — it never needs to read results</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="no">ITEMS</span><span class="o">.</span><span class="n">times</span><span class="w">   </span><span class="p">{</span><span class="w"> </span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="no">WORKERS</span><span class="o">.</span><span class="n">times</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">jobs</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="ss">:stop</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="n">results</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="ss">:stop</span><span class="p">)</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="n">drainer</span><span class="o">.</span><span class="n">value</span><span class="w">  </span><span class="c1"># collect everything after all workers are done</span>
 </span></code></pre></div>
 <hr />
 <h2 id="spin-wait-storm">Spin-Wait Storm<a class="headerlink" href="#spin-wait-storm" title="Permanent link">&para;</a></h2>
@@ -843,16 +1061,16 @@
 <hr />
 <h2 id="nil-as-a-payload"><code>nil</code> as a Payload<a class="headerlink" href="#nil-as-a-payload" title="Permanent link">&para;</a></h2>
 <p><code>nil</code> is an unambiguous payload. <code>try_pop</code> returns <code>RactorQueue::EMPTY</code> (a unique frozen sentinel) when the queue is empty, and <code>nil</code> when <code>nil</code> was actually pushed:</p>
-<div class="language-ruby highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">)</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">q</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kp">nil</span><span class="p">)</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span><span class="w">   </span><span class="c1"># =&gt; nil                (the nil we pushed)</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span><span class="w">   </span><span class="c1"># =&gt; RactorQueue::EMPTY (queue is now empty — clearly distinct)</span>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">q</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="no">RactorQueue</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="ss">capacity</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">)</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="n">q</span><span class="o">.</span><span class="n">push</span><span class="p">(</span><span class="kp">nil</span><span class="p">)</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span><span class="w">   </span><span class="c1"># =&gt; nil                (the nil we pushed)</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span><span class="w">   </span><span class="c1"># =&gt; RactorQueue::EMPTY (queue is now empty — clearly distinct)</span>
 </span></code></pre></div>
 <p>Always check for empty with identity comparison:</p>
-<div class="language-ruby highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">return</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">v</span><span class="o">.</span><span class="n">equal?</span><span class="p">(</span><span class="no">RactorQueue</span><span class="o">::</span><span class="no">EMPTY</span><span class="p">)</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">process</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="w">   </span><span class="c1"># v may be nil — that&#39;s a real payload</span>
+<div class="language-ruby highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">v</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">q</span><span class="o">.</span><span class="n">try_pop</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">return</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">v</span><span class="o">.</span><span class="n">equal?</span><span class="p">(</span><span class="no">RactorQueue</span><span class="o">::</span><span class="no">EMPTY</span><span class="p">)</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="n">process</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="w">   </span><span class="c1"># v may be nil — that&#39;s a real payload</span>
 </span></code></pre></div>
 <p>The blocking <code>pop</code> has no empty case — it only returns when a value was actually dequeued.</p>
 <hr />

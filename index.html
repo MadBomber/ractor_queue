@@ -764,7 +764,7 @@
 <li><strong>Not unbounded</strong> — capacity is fixed at construction; size up-front or use the <a href="patterns/#3-queue-pool-high-ractor-counts">queue pool pattern</a></li>
 </ul>
 <h2 id="implementation">Implementation<a class="headerlink" href="#implementation" title="Permanent link">&para;</a></h2>
-<p>RactorQueue wraps <a href="https://github.com/max0x7ba/atomic_queue"><code>max0x7ba/atomic_queue</code></a> — a C++14 header-only, cache-line-aligned, lock-free MPMC queue — via <a href="https://github.com/jasonroelofs/rice">Rice</a> 4.x bindings. The C++ buffer is unaffected by Ruby's freeze; only the Ruby wrapper object is frozen to satisfy <code>Ractor.make_shareable</code>.</p>
+<p>RactorQueue wraps <a href="https://github.com/max0x7ba/atomic_queue"><code>max0x7ba/atomic_queue</code></a> — a C++17 header-only, cache-line-aligned, lock-free MPMC queue — via <a href="https://github.com/jasonroelofs/rice">Rice</a> 4.x bindings. The C++ buffer is unaffected by Ruby's freeze; only the Ruby wrapper object is frozen to satisfy <code>Ractor.make_shareable</code>.</p>
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="installation/">Installation</a></li>
