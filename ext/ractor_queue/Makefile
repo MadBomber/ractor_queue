@@ -13,12 +13,12 @@ NULLCMD = :
 #### Start of system configuration section. ####
 
 srcdir = .
-topdir = /Users/dewayne/.rbenv/versions/4.0.2/include/ruby-4.0.0
+topdir = /Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0
 hdrdir = $(topdir)
-arch_hdrdir = /Users/dewayne/.rbenv/versions/4.0.2/include/ruby-4.0.0/arm64-darwin25
+arch_hdrdir = /Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/arm64-darwin25
 PATH_SEPARATOR = :
 VPATH = $(srcdir):$(arch_hdrdir)/ruby:$(hdrdir)/ruby
-prefix = $(DESTDIR)/Users/dewayne/.rbenv/versions/4.0.2
+prefix = $(DESTDIR)/Users/dewayne/.rbenv/versions/4.0.6
 rubysitearchprefix = $(rubylibprefix)/$(sitearch)
 rubyarchprefix = $(rubylibprefix)/$(arch)
 rubylibprefix = $(libdir)/$(RUBY_BASE_NAME)
@@ -87,12 +87,12 @@ warnflags = -Wall -Wextra -Wextra-tokens -Wdeprecated-declarations -Wdivision-by
 cppflags = 
 CCDLFLAGS = -fno-common
 CFLAGS   = $(CCDLFLAGS) $(cflags) -fno-common -pipe $(ARCH_FLAG)
-INCFLAGS = -I. -I$(arch_hdrdir) -I$(hdrdir)/ruby/backward -I$(hdrdir) -I$(srcdir) -I/Users/dewayne/.rbenv/versions/4.0.2/lib/ruby/gems/4.0.0/gems/rice-4.11.5/include -I$(srcdir)/../../vendor/atomic_queue/include
+INCFLAGS = -I. -I$(arch_hdrdir) -I$(hdrdir)/ruby/backward -I$(hdrdir) -I$(srcdir) -I/Users/dewayne/.rbenv/versions/4.0.6/lib/ruby/gems/4.0.0/gems/rice-4.12.0/include -I$(srcdir)/../../vendor/atomic_queue/include
 DEFS     = 
-CPPFLAGS =  -I/opt/homebrew/opt/openssl@3/include -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT $(DEFS) $(cppflags) -std=c++17
-CXXFLAGS = $(CCDLFLAGS) -fdeclspec -DRICE_VERSION_MAJOR=4 -DRICE_VERSION_MINOR=11 -DRICE_VERSION_PATCH=5 -std=c++17 -Wno-array-bounds $(ARCH_FLAG)
-ldflags  = -L. -L/opt/homebrew/opt/openssl@3/lib -fstack-protector-strong -L/opt/homebrew/Cellar/gmp/6.3.0/lib
-dldflags = -L/opt/homebrew/opt/openssl@3/lib -L/opt/homebrew/Cellar/gmp/6.3.0/lib -Wl,-undefined,dynamic_lookup 
+CPPFLAGS =  -I/opt/homebrew/include -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT $(DEFS) $(cppflags) -std=c++17
+CXXFLAGS = $(CCDLFLAGS) -fdeclspec -DRICE_VERSION_MAJOR=4 -DRICE_VERSION_MINOR=12 -DRICE_VERSION_PATCH=0 -std=c++17 -Wno-array-bounds $(ARCH_FLAG)
+ldflags  = -L. -L/opt/homebrew/lib -fstack-protector-strong -L/opt/homebrew/Cellar/gmp/6.3.0/lib
+dldflags = -L/opt/homebrew/lib -L/opt/homebrew/Cellar/gmp/6.3.0/lib -Wl,-undefined,dynamic_lookup 
 ARCH_FLAG = -arch arm64
 DLDFLAGS = $(ldflags) $(dldflags) $(ARCH_FLAG)
 LDSHARED = $(CC) -dynamic -bundle

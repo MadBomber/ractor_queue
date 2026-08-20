@@ -1,0 +1,47 @@
+find_header: checking for rice/rice.hpp in /Users/dewayne/.rbenv/versions/4.0.6/lib/ruby/gems/4.0.0/gems/rice-4.12.0/include... -------------------- yes
+
+DYLD_LIBRARY_PATH=.:/Users/dewayne/.rbenv/versions/4.0.6/lib LSAN_OPTIONS=detect_leaks=0 "clang++ -o conftest -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/arm64-darwin25 -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/ruby/backward -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0 -I. -I/opt/homebrew/include -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT   -fdeclspec conftest.cc -L. -L/Users/dewayne/.rbenv/versions/4.0.6/lib -L. -L/opt/homebrew/lib -fstack-protector-strong -L/opt/homebrew/Cellar/gmp/6.3.0/lib  -arch arm64   -lruby.4.0  -lpthread  "
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: int main(int argc, char **argv)
+4: {
+5:   return !!argv[argc];
+6: }
+/* end */
+
+DYLD_LIBRARY_PATH=.:/Users/dewayne/.rbenv/versions/4.0.6/lib LSAN_OPTIONS=detect_leaks=0 "clang++ -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/arm64-darwin25 -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/ruby/backward -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0 -I. -I/opt/homebrew/include -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT   -fdeclspec -DRICE_VERSION_MAJOR=4 -DRICE_VERSION_MINOR=12 -DRICE_VERSION_PATCH=0 -std=c++17 -Wno-array-bounds -arch arm64  -c conftest.cc"
+conftest.cc:3:10: fatal error: 'rice/rice.hpp' file not found
+    3 | #include <rice/rice.hpp>
+      |          ^~~~~~~~~~~~~~~
+1 error generated.
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <rice/rice.hpp>
+/* end */
+
+DYLD_LIBRARY_PATH=.:/Users/dewayne/.rbenv/versions/4.0.6/lib LSAN_OPTIONS=detect_leaks=0 "clang++ -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/arm64-darwin25 -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/ruby/backward -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0 -I. -I/opt/homebrew/include -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT   -fdeclspec -DRICE_VERSION_MAJOR=4 -DRICE_VERSION_MINOR=12 -DRICE_VERSION_PATCH=0 -std=c++17 -Wno-array-bounds -arch arm64 -I/Users/dewayne/.rbenv/versions/4.0.6/lib/ruby/gems/4.0.0/gems/rice-4.12.0/include -c conftest.cc"
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <rice/rice.hpp>
+/* end */
+
+--------------------
+
+find_header: checking for atomic_queue/atomic_queue.h... -------------------- yes
+
+DYLD_LIBRARY_PATH=.:/Users/dewayne/.rbenv/versions/4.0.6/lib LSAN_OPTIONS=detect_leaks=0 "clang++ -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/arm64-darwin25 -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0/ruby/backward -I/Users/dewayne/.rbenv/versions/4.0.6/include/ruby-4.0.0 -I. -I/Users/dewayne/.rbenv/versions/4.0.6/lib/ruby/gems/4.0.0/gems/rice-4.12.0/include -I./../../vendor/atomic_queue/include -I/opt/homebrew/include -D_XOPEN_SOURCE -D_DARWIN_C_SOURCE -D_DARWIN_UNLIMITED_SELECT -D_REENTRANT   -std=c++17 -fdeclspec -DRICE_VERSION_MAJOR=4 -DRICE_VERSION_MINOR=12 -DRICE_VERSION_PATCH=0 -std=c++17 -Wno-array-bounds -arch arm64  -c conftest.cc"
+checked program was:
+/* begin */
+1: #include "ruby.h"
+2: 
+3: #include <atomic_queue/atomic_queue.h>
+/* end */
+
+--------------------
+
