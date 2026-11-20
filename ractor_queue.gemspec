@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
                        "Queue uses Mutex and cannot cross Ractor boundaries."
   spec.homepage      = "https://github.com/MadBomber/ractor_queue"
   spec.license       = "MIT"
-  spec.required_ruby_version = ">= 3.2.0"
+  spec.required_ruby_version = ">= 4.0"
 
   spec.files = Dir[
     "lib/**/*.rb",
